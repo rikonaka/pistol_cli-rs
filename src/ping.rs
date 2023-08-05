@@ -1,7 +1,5 @@
 use crate::Args;
 use crate::AutoInferScanTypeError;
-use crate::GetTargetPortFailed;
-use crate::SplitPortError;
 use crate::NULL_VALUE;
 use anyhow::Result;
 use std::net::Ipv4Addr;
@@ -73,29 +71,17 @@ pub fn start_ping(args: Args) -> Result<()> {
     }
 
     if args.port != NULL_VALUE {
-        if args.port.contains("-") {
-            let port_split_vec: Vec<&str> = args.port.split("-").collect();
-            if port_split_vec.len() == 2 {
-                let start_port: u16 = port_split_vec[0].parse()?;
-                let end_port: u16 = port_split_vec[1].parse()?;
-                parameters.start_port = Some(start_port);
-                parameters.end_port = Some(end_port);
-                parameters.inter_scan_type = InferScanType::Host;
-            } else {
-                return Err(SplitPortError::new(args.port).into());
-            }
+        let dst_port: u16 = args.port.parse()?;
+        parameters.dst_port = Some(dst_port);
+        if parameters.inter_scan_type == InferScanType::Subnet {
+            parameters.start_port = Some(dst_port);
+            parameters.end_port = Some(dst_port);
         } else {
-            let dst_port: u16 = args.port.parse()?;
-            parameters.dst_port = Some(dst_port);
-            if parameters.inter_scan_type == InferScanType::Subnet {
-                parameters.start_port = Some(dst_port);
-                parameters.end_port = Some(dst_port);
-            } else {
-                parameters.inter_scan_type = InferScanType::Host;
-            }
+            parameters.inter_scan_type = InferScanType::Host;
         }
     } else {
-        return Err(GetTargetPortFailed::new().into());
+        parameters.inter_scan_type = InferScanType::Host;
+        parameters.dst_port = None;
     };
 
     let interface = if args.interface != NULL_VALUE {
@@ -105,7 +91,7 @@ pub fn start_ping(args: Args) -> Result<()> {
     };
     parameters.interface = interface;
 
-    let print_result = true;
+    let print_result = false;
     let timeout = Some(Duration::from_secs_f32(0.1));
     let max_loop = Some(64);
     let threads_num = 0; // auto detect
@@ -118,7 +104,7 @@ pub fn start_ping(args: Args) -> Result<()> {
             } else if args.ack {
                 pistol::tcp_ack_ping_host
             } else if args.udp {
-                let _ = pistol::udp_ping_host(
+                let ret = pistol::udp_ping_host(
                     src_ipv4,
                     src_port,
                     parameters.dst_ipv4.unwrap(),
@@ -128,9 +114,10 @@ pub fn start_ping(args: Args) -> Result<()> {
                     timeout,
                     max_loop,
                 )?;
+                println!("{}", ret);
                 return Ok(());
             } else if args.icmp {
-                let _ = pistol::icmp_ping_host(
+                let ret = pistol::icmp_ping_host(
                     src_ipv4,
                     src_port,
                     parameters.dst_ipv4.unwrap(),
@@ -140,11 +127,12 @@ pub fn start_ping(args: Args) -> Result<()> {
                     timeout,
                     max_loop,
                 )?;
+                println!("{}", ret);
                 return Ok(());
             } else {
                 pistol::tcp_syn_ping_host
             };
-            let _ = func(
+            let ret = func(
                 src_ipv4,
                 src_port,
                 parameters.dst_ipv4.unwrap(),
@@ -154,6 +142,7 @@ pub fn start_ping(args: Args) -> Result<()> {
                 timeout,
                 max_loop,
             )?;
+            println!("{}", ret);
         }
         InferScanType::Subnet => {
             let func = if args.syn {
@@ -161,7 +150,7 @@ pub fn start_ping(args: Args) -> Result<()> {
             } else if args.ack {
                 pistol::tcp_ack_ping_subnet
             } else if args.udp {
-                let _ = pistol::udp_ping_subnet(
+                let ret = pistol::udp_ping_subnet(
                     src_ipv4,
                     src_port,
                     parameters.dst_port,
@@ -172,9 +161,12 @@ pub fn start_ping(args: Args) -> Result<()> {
                     timeout,
                     max_loop,
                 )?;
+                for k in ret.keys() {
+                    println!("{}", ret.get(k).unwrap());
+                }
                 return Ok(());
             } else if args.icmp {
-                let _ = pistol::icmp_ping_subnet(
+                let ret = pistol::icmp_ping_subnet(
                     src_ipv4,
                     src_port,
                     parameters.dst_port,
@@ -185,11 +177,14 @@ pub fn start_ping(args: Args) -> Result<()> {
                     timeout,
                     max_loop,
                 )?;
+                for k in ret.keys() {
+                    println!("{}", ret.get(k).unwrap());
+                }
                 return Ok(());
             } else {
                 pistol::tcp_syn_ping_subnet
             };
-            let _ = func(
+            let ret = func(
                 src_ipv4,
                 src_port,
                 parameters.dst_port,
@@ -200,6 +195,9 @@ pub fn start_ping(args: Args) -> Result<()> {
                 timeout,
                 max_loop,
             )?;
+            for k in ret.keys() {
+                println!("{}", ret.get(k).unwrap());
+            }
         }
     }
 
