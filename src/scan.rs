@@ -162,8 +162,8 @@ pub fn start_scan(args: Args) -> Result<()> {
                     src_port,
                     parameters.dst_ipv4.unwrap(),
                     parameters.dst_port.unwrap(),
-                    parameters.zombie_ipv4.unwrap(),
-                    parameters.zombie_port.unwrap(),
+                    parameters.zombie_ipv4,
+                    parameters.zombie_port,
                     parameters.interface.as_deref(),
                     print_result,
                     timeout,
@@ -191,6 +191,16 @@ pub fn start_scan(args: Args) -> Result<()> {
                 //     timeout,
                 //     max_loop,
                 // )?;
+                return Ok(());
+            } else if args.arp {
+                let _ = pistol::arp_scan_subnet(
+                    parameters.subnet.unwrap(),
+                    None,
+                    parameters.interface.as_deref(),
+                    threads_num,
+                    print_result,
+                    max_loop,
+                )?;
                 return Ok(());
             } else {
                 pistol::tcp_syn_scan_single_port
@@ -232,8 +242,8 @@ pub fn start_scan(args: Args) -> Result<()> {
                     src_ipv4,
                     src_port,
                     parameters.dst_ipv4.unwrap(),
-                    parameters.zombie_ipv4.unwrap(),
-                    parameters.zombie_port.unwrap(),
+                    parameters.zombie_ipv4,
+                    parameters.zombie_port,
                     parameters.start_port.unwrap(),
                     parameters.end_port.unwrap(),
                     parameters.interface.as_deref(),
@@ -258,6 +268,16 @@ pub fn start_scan(args: Args) -> Result<()> {
                 )?;
                 return Ok(());
             } else if args.ip {
+                return Ok(());
+            } else if args.arp {
+                let _ = pistol::arp_scan_subnet(
+                    parameters.subnet.unwrap(),
+                    None,
+                    parameters.interface.as_deref(),
+                    threads_num,
+                    print_result,
+                    max_loop,
+                )?;
                 return Ok(());
             } else {
                 pistol::tcp_syn_scan_range_port
@@ -300,8 +320,8 @@ pub fn start_scan(args: Args) -> Result<()> {
                 let _ = pistol::tcp_idle_scan_subnet(
                     src_ipv4,
                     src_port,
-                    parameters.zombie_ipv4.unwrap(),
-                    parameters.zombie_port.unwrap(),
+                    parameters.zombie_ipv4,
+                    parameters.zombie_port,
                     parameters.subnet.unwrap(),
                     parameters.start_port.unwrap(),
                     parameters.end_port.unwrap(),

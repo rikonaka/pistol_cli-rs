@@ -79,12 +79,15 @@ pub struct Args {
     /// Udp flag
     #[arg(long, action)]
     udp: bool,
-    /// ip flag
+    /// Ip flag
     #[arg(long, action)]
     ip: bool,
-    /// icmp flag
+    /// Icmp flag
     #[arg(long, action)]
     icmp: bool,
+    /// Arp flag
+    #[arg(long, action)]
+    arp: bool,
 }
 
 /* GetTargetPortFailed */
