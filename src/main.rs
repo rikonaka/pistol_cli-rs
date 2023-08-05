@@ -1,4 +1,6 @@
 use clap::Parser;
+use std::error::Error;
+use std::fmt;
 
 mod flood;
 mod ping;
@@ -40,13 +42,127 @@ pub struct Args {
     #[arg(short, long, default_value = NULL_VALUE)]
     interface: String,
 
+    /// Zombie host (Idle scan)
+    #[arg(long, default_value = NULL_VALUE)]
+    zombie_host: String,
+    /// Zombie port (Idle scan)
+    #[arg(long, default_value_t = 0)]
+    zombie_port: u16,
+
     /// Syn flag
     #[arg(long, action)]
     syn: bool,
     /// Ack flag
     #[arg(long, action)]
     ack: bool,
+    /// Connect flag
+    #[arg(long, action)]
+    connect: bool,
+    /// Fin flag
+    #[arg(long, action)]
+    fin: bool,
+    /// Null flag
+    #[arg(long, action)]
+    null: bool,
+    /// Xmas flag
+    #[arg(long, action)]
+    xmas: bool,
+    /// Window flag
+    #[arg(long, action)]
+    window: bool,
+    /// Maimon flag
+    #[arg(long, action)]
+    maimon: bool,
+    /// Idle flag
+    #[arg(long, action)]
+    idle: bool,
+    /// Udp flag
+    #[arg(long, action)]
+    udp: bool,
+    /// ip flag
+    #[arg(long, action)]
+    ip: bool,
+    /// icmp flag
+    #[arg(long, action)]
+    icmp: bool,
 }
+
+/* GetTargetPortFailed */
+#[derive(Debug, Clone)]
+pub struct GetTargetPortFailed {}
+
+impl fmt::Display for GetTargetPortFailed {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "please set target port")
+    }
+}
+
+impl GetTargetPortFailed {
+    pub fn new() -> GetTargetPortFailed {
+        GetTargetPortFailed {}
+    }
+}
+
+impl Error for GetTargetPortFailed {}
+
+/* SplitPortError */
+#[derive(Debug, Clone)]
+pub struct SplitPortError {
+    portstr: String,
+}
+
+impl fmt::Display for SplitPortError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not split range port {}", self.portstr)
+    }
+}
+
+impl SplitPortError {
+    pub fn new(portstr: String) -> SplitPortError {
+        SplitPortError { portstr }
+    }
+}
+
+impl Error for SplitPortError {}
+
+/* AutoInferScanTypeError */
+#[derive(Debug, Clone)]
+pub struct AutoInferScanTypeError {}
+
+impl fmt::Display for AutoInferScanTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "can not auto infer scan type, please set host, port or interface at least one"
+        )
+    }
+}
+
+impl AutoInferScanTypeError {
+    pub fn new() -> AutoInferScanTypeError {
+        AutoInferScanTypeError {}
+    }
+}
+
+impl Error for AutoInferScanTypeError {}
+
+/* IdleScanValueError */
+#[derive(Debug, Clone)]
+pub struct IdleScanValueError {}
+
+impl fmt::Display for IdleScanValueError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not find the zombie host or port")
+    }
+}
+
+impl IdleScanValueError {
+    pub fn new() -> IdleScanValueError {
+        IdleScanValueError {}
+    }
+}
+
+impl Error for IdleScanValueError {}
 
 fn main() {
     let args = Args::parse();
@@ -58,7 +174,15 @@ fn main() {
         }
     } else if args.ping {
         // start ping
+        match ping::start_ping(args) {
+            Err(e) => println!("{}", e),
+            _ => (),
+        }
     } else if args.flood {
         // start flood attack
+        match flood::start_flood(args) {
+            Err(e) => println!("{}", e),
+            _ => (),
+        }
     }
 }

@@ -1,72 +1,15 @@
 use crate::Args;
+use crate::AutoInferScanTypeError;
+use crate::GetTargetPortFailed;
+use crate::IdleScanValueError;
+use crate::SplitPortError;
 use crate::NULL_VALUE;
 use anyhow::Result;
 use pistol;
-use std::error::Error;
-use std::fmt;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::time::Duration;
 use subnetwork::Ipv4Pool;
-
-/* GetTargetPortFailed */
-#[derive(Debug, Clone)]
-struct GetTargetPortFailed {}
-
-impl fmt::Display for GetTargetPortFailed {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "please set target port")
-    }
-}
-
-impl GetTargetPortFailed {
-    pub fn new() -> GetTargetPortFailed {
-        GetTargetPortFailed {}
-    }
-}
-
-impl Error for GetTargetPortFailed {}
-
-/* SplitPortError */
-#[derive(Debug, Clone)]
-struct SplitPortError {
-    portstr: String,
-}
-
-impl fmt::Display for SplitPortError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "can not split range port {}", self.portstr)
-    }
-}
-
-impl SplitPortError {
-    pub fn new(portstr: String) -> SplitPortError {
-        SplitPortError { portstr }
-    }
-}
-
-impl Error for SplitPortError {}
-
-/* AutoInferScanTypeError */
-#[derive(Debug, Clone)]
-struct AutoInferScanTypeError {}
-
-impl fmt::Display for AutoInferScanTypeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "can not auto infer scan type, please set host, port or interface at least one"
-        )
-    }
-}
-
-impl AutoInferScanTypeError {
-    pub fn new() -> AutoInferScanTypeError {
-        AutoInferScanTypeError {}
-    }
-}
-
-impl Error for AutoInferScanTypeError {}
 
 #[derive(PartialEq)]
 enum InferScanType {
@@ -81,6 +24,8 @@ struct Parameters {
     src_port: Option<u16>,
     dst_ipv4: Option<Ipv4Addr>,
     dst_port: Option<u16>,
+    zombie_ipv4: Option<Ipv4Addr>,
+    zombie_port: Option<u16>,
     start_port: Option<u16>,
     end_port: Option<u16>,
     subnet: Option<Ipv4Pool>,
@@ -95,6 +40,8 @@ impl Parameters {
             src_port: None,
             dst_ipv4: None,
             dst_port: None,
+            zombie_ipv4: None,
+            zombie_port: None,
             start_port: None,
             end_port: None,
             subnet: None,
@@ -120,6 +67,20 @@ pub fn start_scan(args: Args) -> Result<()> {
         None
     };
     parameters.src_port = src_port;
+
+    let zombie_ipv4 = if args.zombie_host != NULL_VALUE {
+        Some(Ipv4Addr::from_str(&args.zombie_host)?)
+    } else {
+        None
+    };
+    parameters.zombie_ipv4 = zombie_ipv4;
+
+    let zombie_port = if args.zombie_port != 0 {
+        Some(args.zombie_port)
+    } else {
+        None
+    };
+    parameters.zombie_port = zombie_port;
 
     if args.host != NULL_VALUE {
         let dst_ipv4 = Ipv4Addr::from_str(&args.host)?;
@@ -174,22 +135,43 @@ pub fn start_scan(args: Args) -> Result<()> {
         InferScanType::Unknown => return Err(AutoInferScanTypeError::new().into()),
         InferScanType::SinglePort => {
             // scan single port
-            if args.syn {
+            let func = if args.syn {
                 // start syn scan
-                let _ = pistol::tcp_syn_scan_single_port(
-                    src_ipv4,
-                    src_port,
-                    parameters.dst_ipv4.unwrap(),
-                    parameters.dst_port.unwrap(),
-                    parameters.interface.as_deref(),
-                    print_result,
-                    timeout,
-                    max_loop,
-                )?;
-                // println!("{}", scan_ret);
+                pistol::tcp_syn_scan_single_port
             } else if args.ack {
                 // start ack scan
-                let _ = pistol::tcp_ack_scan_single_port(
+                pistol::tcp_ack_scan_single_port
+            } else if args.connect {
+                pistol::tcp_connect_scan_single_port
+            } else if args.fin {
+                pistol::tcp_fin_scan_single_port
+            } else if args.null {
+                pistol::tcp_null_scan_single_port
+            } else if args.xmas {
+                pistol::tcp_xmas_scan_single_port
+            } else if args.window {
+                pistol::tcp_window_scan_single_port
+            } else if args.maimon {
+                pistol::tcp_maimon_scan_single_port
+            } else if args.idle {
+                if parameters.zombie_ipv4.is_none() || parameters.zombie_port.is_none() {
+                    return Err(IdleScanValueError::new().into());
+                }
+                let _ = pistol::tcp_idle_scan_single_port(
+                    src_ipv4,
+                    src_port,
+                    parameters.dst_ipv4.unwrap(),
+                    parameters.dst_port.unwrap(),
+                    parameters.zombie_ipv4.unwrap(),
+                    parameters.zombie_port.unwrap(),
+                    parameters.interface.as_deref(),
+                    print_result,
+                    timeout,
+                    max_loop,
+                )?;
+                return Ok(());
+            } else if args.udp {
+                let _ = pistol::udp_scan_single_port(
                     src_ipv4,
                     src_port,
                     parameters.dst_ipv4.unwrap(),
@@ -199,26 +181,70 @@ pub fn start_scan(args: Args) -> Result<()> {
                     timeout,
                     max_loop,
                 )?;
-                // println!("{}", scan_ret);
-            }
+                return Ok(());
+            } else if args.ip {
+                // let _ = pistol::ip_protocol_scan_host(
+                //     src_ipv4,
+                //     parameters.dst_ipv4.unwrap(),
+                //     parameters.interface.as_deref(),
+                //     print_result,
+                //     timeout,
+                //     max_loop,
+                // )?;
+                return Ok(());
+            } else {
+                pistol::tcp_syn_scan_single_port
+            };
+            let _ = func(
+                src_ipv4,
+                src_port,
+                parameters.dst_ipv4.unwrap(),
+                parameters.dst_port.unwrap(),
+                parameters.interface.as_deref(),
+                print_result,
+                timeout,
+                max_loop,
+            )?;
         }
         InferScanType::RangePort => {
             // scan range port
-            if args.syn {
-                let _ = pistol::tcp_syn_scan_range_port(
-                    src_ipv4,
-                    src_port,
-                    parameters.dst_ipv4.unwrap(),
-                    parameters.start_port.unwrap(),
-                    parameters.end_port.unwrap(),
-                    parameters.interface.as_deref(),
-                    threads_num,
-                    print_result,
-                    timeout,
-                    max_loop,
-                )?;
+            let func = if args.syn {
+                pistol::tcp_syn_scan_range_port
             } else if args.ack {
-                let _ = pistol::tcp_ack_scan_range_port(
+                pistol::tcp_ack_scan_range_port
+            } else if args.connect {
+                pistol::tcp_connect_scan_range_port
+            } else if args.fin {
+                pistol::tcp_fin_scan_range_port
+            } else if args.null {
+                pistol::tcp_null_scan_range_port
+            } else if args.xmas {
+                pistol::tcp_xmas_scan_range_port
+            } else if args.window {
+                pistol::tcp_window_scan_range_port
+            } else if args.maimon {
+                pistol::tcp_maimon_scan_range_port
+            } else if args.idle {
+                if parameters.zombie_ipv4.is_none() || parameters.zombie_port.is_none() {
+                    return Err(IdleScanValueError::new().into());
+                }
+                let _ = pistol::tcp_idle_scan_range_port(
+                    src_ipv4,
+                    src_port,
+                    parameters.dst_ipv4.unwrap(),
+                    parameters.zombie_ipv4.unwrap(),
+                    parameters.zombie_port.unwrap(),
+                    parameters.start_port.unwrap(),
+                    parameters.end_port.unwrap(),
+                    parameters.interface.as_deref(),
+                    threads_num,
+                    print_result,
+                    timeout,
+                    max_loop,
+                )?;
+                return Ok(());
+            } else if args.udp {
+                let _ = pistol::udp_scan_range_port(
                     src_ipv4,
                     src_port,
                     parameters.dst_ipv4.unwrap(),
@@ -230,25 +256,64 @@ pub fn start_scan(args: Args) -> Result<()> {
                     timeout,
                     max_loop,
                 )?;
-            }
+                return Ok(());
+            } else if args.ip {
+                return Ok(());
+            } else {
+                pistol::tcp_syn_scan_range_port
+            };
+            let _ = func(
+                src_ipv4,
+                src_port,
+                parameters.dst_ipv4.unwrap(),
+                parameters.start_port.unwrap(),
+                parameters.end_port.unwrap(),
+                parameters.interface.as_deref(),
+                threads_num,
+                print_result,
+                timeout,
+                max_loop,
+            )?;
         }
         InferScanType::Subnet => {
             // scan a subnet
-            if args.syn {
-                let _ = pistol::tcp_syn_scan_subnet(
-                    src_ipv4,
-                    src_port,
-                    parameters.subnet.unwrap(),
-                    parameters.start_port.unwrap(),
-                    parameters.end_port.unwrap(),
-                    parameters.interface.as_deref(),
-                    threads_num,
-                    print_result,
-                    timeout,
-                    max_loop,
-                )?;
+            let func = if args.syn {
+                pistol::tcp_syn_scan_subnet
             } else if args.ack {
-                let _ = pistol::tcp_ack_scan_subnet(
+                pistol::tcp_ack_scan_subnet
+            } else if args.connect {
+                pistol::tcp_connect_scan_subnet
+            } else if args.fin {
+                pistol::tcp_fin_scan_subnet
+            } else if args.null {
+                pistol::tcp_null_scan_subnet
+            } else if args.xmas {
+                pistol::tcp_xmas_scan_subnet
+            } else if args.window {
+                pistol::tcp_window_scan_subnet
+            } else if args.maimon {
+                pistol::tcp_maimon_scan_subnet
+            } else if args.idle {
+                if parameters.zombie_ipv4.is_none() || parameters.zombie_port.is_none() {
+                    return Err(IdleScanValueError::new().into());
+                }
+                let _ = pistol::tcp_idle_scan_subnet(
+                    src_ipv4,
+                    src_port,
+                    parameters.zombie_ipv4.unwrap(),
+                    parameters.zombie_port.unwrap(),
+                    parameters.subnet.unwrap(),
+                    parameters.start_port.unwrap(),
+                    parameters.end_port.unwrap(),
+                    parameters.interface.as_deref(),
+                    threads_num,
+                    print_result,
+                    timeout,
+                    max_loop,
+                )?;
+                return Ok(());
+            } else if args.udp {
+                let _ = pistol::udp_scan_subnet(
                     src_ipv4,
                     src_port,
                     parameters.subnet.unwrap(),
@@ -260,7 +325,24 @@ pub fn start_scan(args: Args) -> Result<()> {
                     timeout,
                     max_loop,
                 )?;
-            }
+                return Ok(());
+            } else if args.ip {
+                return Ok(());
+            } else {
+                pistol::tcp_syn_scan_subnet
+            };
+            let _ = func(
+                src_ipv4,
+                src_port,
+                parameters.subnet.unwrap(),
+                parameters.start_port.unwrap(),
+                parameters.end_port.unwrap(),
+                parameters.interface.as_deref(),
+                threads_num,
+                print_result,
+                timeout,
+                max_loop,
+            )?;
         }
     }
     Ok(())
